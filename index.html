@@ -1,0 +1,119 @@
+import { useState, useCallback, useEffect } from 'react';
+import Header from './components/Header';
+import Hero from './components/Hero';
+import WorkshopCards from './components/WorkshopCards';
+import InteractiveVisualizer from './components/InteractiveVisualizer';
+import BookingForm from './components/BookingForm';
+import BookingTicket from './components/BookingTicket';
+import MyBookings from './components/MyBookings';
+import Footer from './components/Footer';
+import { WorkshopType, PotteryCustomSelection, FlowerCustomSelection, BookingInsert, Booking } from './types';
+import { supabase } from './lib/supabase';
+
+const defaultPotterySelection: PotteryCustomSelection = {
+  clay: 'Đất Sét Mịn Cát Trắng Sữa',
+  shape: 'Bình Hoa Cổ Điển',
+  glaze: 'Men Trong Tinh Khôi',
+};
+
+const defaultFlowerSelection: FlowerCustomSelection = {
+  palette: 'Tuyết Trắng Ngần',
+  style: 'Ohara Pháp Lãng Mạn',
+  vase: 'Bình Gốm Thủ Công',
+};
+
+function App() {
+  const [selectedWorkshop, setSelectedWorkshop] = useState<WorkshopType>('terre');
+  const [potterySelection, setPotterySelection] = useState<PotteryCustomSelection>(defaultPotterySelection);
+  const [flowerSelection, setFlowerSelection] = useState<FlowerCustomSelection>(defaultFlowerSelection);
+  const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
+  const [showBookingTicket, setShowBookingTicket] = useState(false);
+  const [showMyBookings, setShowMyBookings] = useState(false);
+
+  const saveToLocalStorage = (booking: Booking) => {
+    try {
+      const stored = localStorage.getItem('atelier_bookings');
+      const bookings = stored ? JSON.parse(stored) : [];
+      bookings.unshift({ ...booking, storedAt: new Date().toISOString() });
+      localStorage.setItem('atelier_bookings', JSON.stringify(bookings.slice(0, 20)));
+    } catch (error) {
+      console.error('Error saving to localStorage:', error);
+    }
+  };
+
+  const handleSubmitBooking = useCallback(async (bookingData: BookingInsert) => {
+    try {
+      const { data: workshopData } = await supabase
+        .from('workshops')
+        .select('id')
+        .eq('type', selectedWorkshop)
+        .single();
+
+      const bookingToInsert = {
+        ...bookingData,
+        workshop_id: workshopData?.id || null,
+      };
+
+      const { data, error } = await supabase.from('bookings').insert(bookingToInsert).select().single();
+
+      if (error) throw error;
+
+      if (data) {
+        setConfirmedBooking(data);
+        setShowBookingTicket(true);
+        saveToLocalStorage(data);
+      }
+    } catch (error) {
+      console.error('Error submitting booking:', error);
+      alert('Đã có lỗi xảy ra khi đặt lịch. Vui lòng thử lại hoặc liên hệ qua số điện thoại.');
+    }
+  }, [selectedWorkshop]);
+
+  const handleSelectBooking = useCallback((booking: Booking) => {
+    setConfirmedBooking(booking);
+    setShowBookingTicket(true);
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-ivory-100">
+      <Header onMyBookingsClick={() => setShowMyBookings(true)} />
+
+      <Hero />
+
+      <div id="workshops">
+        <WorkshopCards selectedWorkshop={selectedWorkshop} onSelect={setSelectedWorkshop} />
+      </div>
+
+      <InteractiveVisualizer
+        workshopType={selectedWorkshop}
+        potterySelection={potterySelection}
+        flowerSelection={flowerSelection}
+        onPotteryChange={setPotterySelection}
+        onFlowerChange={setFlowerSelection}
+      />
+
+      <BookingForm
+        workshopType={selectedWorkshop}
+        potterySelection={potterySelection}
+        flowerSelection={flowerSelection}
+        onSubmitBooking={handleSubmitBooking}
+      />
+
+      <Footer />
+
+      {showBookingTicket && (
+        <BookingTicket booking={confirmedBooking} onClose={() => setShowBookingTicket(false)} />
+      )}
+
+      {showMyBookings && (
+        <MyBookings
+          isOpen={showMyBookings}
+          onClose={() => setShowMyBookings(false)}
+          onSelectBooking={handleSelectBooking}
+        />
+      )}
+    </div>
+  );
+}
+
+export default App;
